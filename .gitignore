@@ -1,0 +1,5 @@
+doc/
+tt.*
+tests/.tmp/
+bench.lua
+perf_dataset.lua

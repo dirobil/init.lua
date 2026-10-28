@@ -1,3 +1,4 @@
+-- Инициализация lazy.nvim + общий setup всех плагинов из lua/dirobil/lazy/*.
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then
   vim.fn.system({
@@ -11,16 +12,19 @@ if not vim.loop.fs_stat(lazypath) then
   if vim.v.shell_error ~= 0 then
     vim.api.nvim_echo({
       { "Failed to clone lazy.nvim:\n", "ErrorMsg" },
-      { out, "WarningMsg" },
+      { tostring(vim.v.shell_error), "WarningMsg" },
       { "\nPress any key to exit..." },
     }, true, {})
     vim.fn.getchar()
     os.exit(1)
- end
+  end
 end
 vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
-    spec = "dirobil.lazy",
-    change_detection = { notify = false }
+  spec = { { import = "dirobil.lazy" } },
+  install = { colorscheme = { "catppuccin", "habamax" } }, -- habamax — встроенная запасная тема
+  checker = { enabled = false },   -- не гоняем фоновые проверки сети (Termux/слабый интернет)
+  change_detection = { notify = false },
+  rocks = { enabled = false },     -- luarocks не обязателен: все плагины pure-Lua или с fallback
 })
