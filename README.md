@@ -1,10 +1,12 @@
 # dirobil/init.lua — Neovim конфиг в стиле VS Code
 
 Lua-конфиг Neovim с lazy.nvim. Работает на **Windows** и **Termux (Android)**.
-Включает: файловое дерево, поиск, LSP+автодополнение, Git-интерфейс, терминал,
-форматирование, тему Catppuccin и собственный плагин недавних проектов.
+Конфиг собирается постепенно: активны только базовые плагины, остальные лежат
+в `lua/dirobil/lazy/disabled/` и включаются по одному (см. ниже).
 
 ## Состав
+
+### Активные плагины (подключены)
 
 | Плагин | Назначение | Аналог в VS Code |
 |---|---|---|
@@ -13,12 +15,23 @@ Lua-конфиг Neovim с lazy.nvim. Работает на **Windows** и **Ter
 | [catppuccin](https://github.com/catppuccin/nvim) | тема оформления | темы |
 | [nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons) | иконки файлов | file icons |
 | [toggleterm.nvim](https://github.com/akinsho/toggleterm.nvim) | встроенные терминалы | Integrated Terminal |
-| [neogit](https://github.com/NeogitOrg/neogit) + gitsigns + diffview | Git: статус, staging, коммит | Source Control |
+| [neogit](https://github.com/NeogitOrg/neogit) | Git: статус, staging, коммит | Source Control |
+| `dirobil.projects` (локальный) | недавние проекты: `<leader>pl` | Recent Projects |
+
+### Отключённые плагины (в `lua/dirobil/lazy/disabled/`)
+
+Включаются по одному — переместите файл в `lua/dirobil/lazy/` и перезапустите
+Neovim. Рекомендуемый порядок: `comment` → `gitsigns` → `which-key` →
+`nvim-treesitter` → `lualine` → `conform` → `lsp`. Подробности — в
+`lua/dirobil/lazy/disabled/README.md`.
+
+| Плагин | Назначение | Аналог в VS Code |
+|---|---|---|
+| gitsigns (+ diffview) | знаки git в gutter, blame, hunk-действия | inline git decorations |
 | mason + lspconfig + nvim-cmp + LuaSnip | LSP, автодополнение, сниппеты | IntelliSense |
 | conform.nvim + nvim-lint | форматирование при сохранении, линтинг | Format on Save / ESLint |
-| treesitter | точная подсветка синтаксиса | TextMate grammars |
+| nvim-treesitter | точная подсветка синтаксиса | TextMate grammars |
 | lualine, which-key, Comment.nvim | статус-бар, подсказки клавиш, комментарии | status bar и т.п. |
-| `dirobil.projects` (локальный) | недавние проекты: `<leader>pl` | Recent Projects |
 
 ## Требования
 

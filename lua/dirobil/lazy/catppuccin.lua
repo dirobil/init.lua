@@ -11,12 +11,12 @@ return {
         dark = "macchiato",
       },
       term_colors = true,   -- раскрасить ANSI-цвета терминала (важно для toggleterm)
+      -- Интеграции включаются лениво: если плагина ещё нет (или он отключён),
+      -- catppuccin просто проигнорирует его. Можно оставлять как есть.
       integrations = {
         telescope = true,
         nvimtree = true,
-        gitsigns = true,
         neogit = true,
-        which_key = true,
         indent_buffers = true,
         native_lsp = { enabled = true },
       },
