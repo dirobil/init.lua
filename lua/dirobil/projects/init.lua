@@ -16,6 +16,33 @@ local M = {}
 -- Namespace для подсветки окна (создаётся один раз)
 local HIGHLIGHT_NS = vim.api.nvim_create_namespace("dirobil_projects")
 
+-- Буфер, показывающий окно в данный момент (для корректной перерисовки).
+-- Нужен, чтобы не искать буфер по имени и не вызывать :file для уже названного буфера.
+local current_buf = nil
+
+-- Актуальная карта "номер строки -> путь" для обработчиков keymap'ов
+-- (обновляется при каждой перерисовке окна).
+local active_meta = nil
+
+-- Буферы, на которые уже повешены локальные keymap'ы.
+local maps_installed = {}
+
+-- Найти наш буфер по прямому перебору имён (без bufnr("#..."), который может
+-- вернуть -1 или устаревший номер и привести к E95/E13).
+local function find_own_buf()
+  if current_buf and vim.api.nvim_buf_is_valid(current_buf) then
+    return current_buf
+  end
+  local title = M.config.window_title
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(b) and vim.fn.bufname(b) == title then
+      current_buf = b
+      return b
+    end
+  end
+  return nil
+end
+
 ---------------------------------------------------------------------------
 -- Настройки по умолчанию
 ---------------------------------------------------------------------------
@@ -158,17 +185,44 @@ local augroup_defined = false
 
 function M.show_window()
   local list = M.get_list()
-
-  -- Переиспользуем буфер, если он уже существует
   local title = M.config.window_title
-  local buf = vim.fn.bufnr("#" .. title)
-  if buf ~= -1 and vim.api.nvim_buf_is_valid(buf) then
-    vim.cmd("buffer " .. buf)
+
+  -- Ищем ТОЛЬКО наш собственный буфер (по номеру из current_buf либо по имени).
+  -- Раньше использовался bufnr("#"..title): альтернативный файл окна может
+  -- случайно называться так же, а :file на уже названном буфере падал с E95.
+  local buf = find_own_buf()
+  if buf then
+    -- Буфер жив: показываем его в текущем окне (без :file и без новых буферов).
+    if vim.api.nvim_win_get_buf(0) ~= buf then
+      vim.api.nvim_win_set_buf(0, buf)
+    end
   else
-    vim.cmd("enew")
-    buf = vim.api.nvim_get_current_buf()
-    -- fnameescape защищает от спецсимволов; ":file" задаёт имя без привязки к диску
-    vim.cmd("file " .. vim.fn.fnameescape(title))
+    -- Нашего буфера нет — создаём новый чистый.
+    -- Если текущий буфер безымянный и пустой — переиспользуем его (как :enew),
+    -- иначе открываем новый сплит, чтобы не «съе» пользовательский буфер.
+    local cur = vim.api.nvim_get_current_buf()
+    local shown_elsewhere = false
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+      if w ~= 0 and vim.api.nvim_win_get_buf(w) == cur then
+        shown_elsewhere = true
+        break
+      end
+    end
+    local reusable = vim.bo[cur].buftype == ""
+      and vim.fn.bufname(cur) == ""
+      and #vim.api.nvim_buf_get_lines(cur, 0, -1, false) <= 1
+      and not shown_elsewhere
+    if reusable then
+      buf = cur
+    else
+      vim.cmd("split | enew")
+      buf = vim.api.nvim_get_current_buf()
+    end
+    current_buf = buf
+    -- Имя задаём через pcall: если вдруг буфер с таким именем уже есть
+    -- (например, пользователь сам назвал буфер "Projects"), просто работаем
+    -- без имени — это лучше, чем падение с E95.
+    pcall(vim.api.nvim_buf_set_name, buf, title)
   end
 
   vim.bo[buf].modifiable = true
@@ -207,76 +261,89 @@ function M.show_window()
   end
 
   -----------------------------------------------------------------
-  -- Локальные keymap'ы окна
+  -- Локальные keymap'ы окна.
+  -- Ставим один раз на наш буфер; обработчики читают актуальные meta/buf
+  -- через upvalue-переменные, которые обновляются при каждой перерисовке.
   -----------------------------------------------------------------
-  local function current_dir()
-    local lnum = vim.api.nvim_win_get_cursor(0)[1]
-    return meta[lnum]
-  end
+  active_meta = meta
 
-  local function open_project(dir)
-    -- Обновляем MRU
-    M.add(dir, { silent = true })
-    vim.cmd("cd " .. vim.fn.fnameescape(dir))
-    -- Чистим текущий буфер от старых файлов и открываем новую директорию
-    vim.cmd("silent! %bdelete!")
-    if package.loaded["nvim-tree.api"] then
-      require("nvim-tree.api").tree.open()
-    elseif vim.fn.exists(":Telescope") == 2 then
+  if not maps_installed[buf] then
+    maps_installed[buf] = true
+
+    local function current_dir()
+      local lnum = vim.api.nvim_win_get_cursor(0)[1]
+      return active_meta and active_meta[lnum]
+    end
+
+    local function open_project(dir)
+      -- Обновляем MRU
+      M.add(dir, { silent = true })
+      vim.cmd("cd " .. vim.fn.fnameescape(dir))
+      -- Чистим текущий буфер от старых файлов и открываем новую директорию
+      vim.cmd("silent! %bdelete!")
+      if package.loaded["nvim-tree.api"] then
+        require("nvim-tree.api").tree.open()
+      elseif vim.fn.exists(":Telescope") == 2 then
+        vim.schedule(function()
+          pcall(require("telescope.builtin").find_files, { cwd = dir })
+        end)
+      else
+        vim.cmd("Explore " .. vim.fn.fnameescape(dir))
+      end
+      vim.notify("[projects] cd -> " .. dir, vim.log.levels.INFO)
+    end
+
+    local function delete_project()
+      local dir = current_dir()
+      if dir then
+        M.remove(dir)
+        M.show_window() -- перерисовать
+      end
+    end
+
+    local keyopts = { noremap = true, silent = true, nowait = true }
+
+    vim.keymap.set("n", "<CR>", function()
+      local dir = current_dir()
+      if dir then open_project(dir) end
+    end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Open project" }))
+
+    vim.keymap.set("n", "o", function()
+      local dir = current_dir()
+      if dir then open_project(dir) end
+    end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Open project" }))
+
+    vim.keymap.set("n", "x", delete_project,
+      vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Delete from list" }))
+    vim.keymap.set("n", "<DEL>", delete_project,
+      vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Delete from list" }))
+    vim.keymap.set("n", "d", delete_project,
+      vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Delete from list" }))
+
+    vim.keymap.set("n", "a", function()
+      -- vim.input нельзя вызывать прямо из ключевой последовательности надёжно —
+      -- оборачиваем в vim.schedule (чинит «нажатие a ничего не делает» на некоторых сборках).
       vim.schedule(function()
-        pcall(require("telescope.builtin").find_files, { cwd = dir })
+        local input = vim.fn.input("Add directory: ", vim.fn.getcwd() .. "/", "dir")
+        if input and input ~= "" then
+          M.add(input)
+          M.show_window()
+        end
       end)
-    else
-      vim.cmd("Explore " .. vim.fn.fnameescape(dir))
-    end
-    vim.notify("[projects] cd -> " .. dir, vim.log.levels.INFO)
+    end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Add project" }))
+
+    vim.keymap.set("n", "q", function()
+      vim.cmd("bdelete!")
+    end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Close window" }))
+
+    -- Закрытие окна по Escape тоже
+    vim.keymap.set("n", "<Esc>", function()
+      vim.cmd("bdelete!")
+    end, vim.tbl_extend("error", keyopts, { buffer = buf }))
   end
 
-  local keyopts = { noremap = true, silent = true, nowait = true }
-
-  vim.keymap.set("n", "<CR>", function()
-    local dir = current_dir()
-    if dir then open_project(dir) end
-  end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Open project" }))
-
-  vim.keymap.set("n", "o", function()
-    local dir = current_dir()
-    if dir then open_project(dir) end
-  end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Open project" }))
-
-  local function delete_project()
-    local dir = current_dir()
-    if dir then
-      M.remove(dir)
-      M.show_window() -- перерисовать
-    end
-  end
-
-  vim.keymap.set("n", "x", delete_project,
-    vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Delete from list" }))
-  vim.keymap.set("n", "<DEL>", delete_project,
-    vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Delete from list" }))
-  vim.keymap.set("n", "d", delete_project,
-    vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Delete from list" }))
-
-  vim.keymap.set("n", "a", function()
-    local input = vim.fn.input("Add directory: ", vim.fn.getcwd() .. "/", "dir")
-    if input and input ~= "" then
-      M.add(input)
-      M.show_window()
-    end
-  end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Add project" }))
-
-  vim.keymap.set("n", "q", function()
-    vim.cmd("bdelete!")
-  end, vim.tbl_extend("error", keyopts, { buffer = buf, desc = "Close window" }))
-
-  -- Закрытие окна по Escape тоже
-  vim.keymap.set("n", "<Esc>", function()
-    vim.cmd("bdelete!")
-  end, vim.tbl_extend("error", keyopts, { buffer = buf }))
-
-  -- При выходе из буфера сбрасываем modifiable, чтобы не мешал bdelete
+  -- При выходе из буфера сбрасываем modifiable, чтобы не мешал bdelete,
+  -- и забываем номер буфера / карту нажатых клавиш.
   if not augroup_defined then
     augroup_defined = true
     vim.api.nvim_create_autocmd("BufUnload", {
@@ -286,6 +353,10 @@ function M.show_window()
         if vim.api.nvim_buf_is_valid(ev.buf) then
           pcall(function() vim.bo[ev.buf].modifiable = true end)
         end
+        if ev.buf == current_buf then
+          current_buf = nil
+        end
+        maps_installed[ev.buf] = nil
       end,
     })
   end
