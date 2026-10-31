@@ -11,15 +11,6 @@ return {
         dark = "macchiato",
       },
       term_colors = true,   -- раскрасить ANSI-цвета терминала (важно для toggleterm)
-      -- Интеграции включаются лениво: если плагина ещё нет (или он отключён),
-      -- catppuccin просто проигнорирует его. Можно оставлять как есть.
-      integrations = {
-        telescope = true,
-        nvimtree = true,
-        neogit = true,
-        indent_buffers = true,
-        native_lsp = { enabled = true },
-      },
     })
     vim.cmd.colorscheme("catppuccin")
   end,

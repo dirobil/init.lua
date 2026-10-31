@@ -23,7 +23,7 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   spec = { { import = "dirobil.lazy" } },
-  install = { colorscheme = { "catppuccin", "habamax" } }, -- habamax — встроенная запасная тема
+  --install = { colorscheme = { "catppuccin", "habamax" } }, -- habamax — встроенная запасная тема
   checker = { enabled = false },   -- не гоняем фоновые проверки сети (Termux/слабый интернет)
   change_detection = { notify = false },
   rocks = { enabled = false },     -- luarocks не обязателен: все плагины pure-Lua или с fallback
