@@ -9,3 +9,9 @@ if vim.wo.wrap then
 	map({ "n", "x" }, "k", "gk", { silent = true }) -- вверх по визуальной строке
 end
 
+-- Изменение клавиш для Visual Block
+vim.keymap.set('n', '<leader>v', '<C-v>', { noremap = true, desc = 'Visual Block' })
+
+-- Буфер обмена
+vim.keymap.set('v', '<C-c>', '"+y', { noremap = true, silent = true, desc = "Копировать" })
+vim.keymap.set('n', '<C-v>', '"+p', { noremap = true, silent = true, desc = "Вставить" })
